@@ -6,6 +6,19 @@ import User from "../models/userModel.js"
 
 import sendMail from "../configs/Mail.js"
 
+const isProduction = process.env.NODE_ENV === "production"
+const authCookieBaseOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/",
+}
+
+const authCookieOptions = {
+    ...authCookieBaseOptions,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+}
+
 const normalizeRole = (role) => {
     if (role === "educator" || role === "student") {
         return role
@@ -40,12 +53,7 @@ export const signUp=async (req,res)=>{
            
             })
         let token = await genToken(user._id)
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-            maxAge: 7 * 24 * 60 * 60 * 1000
-          })
+        res.cookie("token", token, authCookieOptions)
           
         return res.status(201).json({
             success: true,
@@ -72,12 +80,7 @@ export const login=async(req,res)=>{
             return res.status(400).json({message:"incorrect Password"})
         }
         let token =await genToken(user._id)
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-            maxAge: 7 * 24 * 60 * 60 * 1000
-          })
+        res.cookie("token", token, authCookieOptions)
           
         return res.status(200).json({
             success: true,
@@ -95,7 +98,7 @@ export const login=async(req,res)=>{
 
 export const logOut = async(req,res)=>{
     try {
-        await res.clearCookie("token")
+        await res.clearCookie("token", authCookieBaseOptions)
         return res.status(200).json({message:"logOut Successfully"})
     } catch (error) {
         return res.status(500).json({message:`logout Error ${error}`})
@@ -119,12 +122,7 @@ export const googleSignup = async (req,res) => {
             await user.save()
         }
         let token =await genToken(user._id)
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-            maxAge: 7 * 24 * 60 * 60 * 1000
-          })
+        res.cookie("token", token, authCookieOptions)
           
         return res.status(200).json({
             success: true,

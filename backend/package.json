@@ -4,6 +4,9 @@
   "description": "",
   "license": "ISC",
   "author": "",
+  "engines": {
+    "node": "20.x"
+  },
   "type": "module",
   "main": "index.js",
   "scripts": {
