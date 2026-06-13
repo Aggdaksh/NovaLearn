@@ -1,0 +1,145 @@
+import mongoose from "mongoose";
+import Course from "../models/courseModel.js";
+import Razorpay from "razorpay";
+import User from "../models/userModel.js";
+import crypto from "crypto";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const getRazorpayInstance = () => {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_SECRET;
+
+  if (!keyId || !keySecret) {
+    return null;
+  }
+
+  return new Razorpay({
+    key_id: keyId,
+    key_secret: keySecret,
+  });
+};
+
+export const createOrder = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    const razorpayInstance = getRazorpayInstance();
+
+    if (!razorpayInstance) {
+      return res.status(503).json({
+        message: "Payments are not configured yet. Add Razorpay keys to enable enrollment checkout.",
+      });
+    }
+
+    const course = await Course.findById(courseId);
+    if (!course) return res.status(404).json({ message: "Course not found" });
+
+    const options = {
+      amount: course.price * 100, // in paisa
+      currency: "INR",
+      receipt: String(courseId),
+    };
+
+    const order = await razorpayInstance.orders.create(options);
+    return res.status(200).json(order);
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ message: `Order creation failed ${err}` });
+  }
+};
+
+export const verifyPayment = async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, userId } = req.body;
+    const razorpayInstance = getRazorpayInstance();
+
+    if (!razorpayInstance) {
+      return res.status(503).json({
+        message: "Payments are not configured yet. Add Razorpay keys to verify enrollments.",
+      });
+    }
+
+    // Validate required fields
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !courseId || !userId) {
+      return res.status(400).json({
+        message: "Missing required fields: razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, userId",
+      });
+    }
+
+    // Verify Razorpay signature using HMAC SHA256
+    const secret = process.env.RAZORPAY_SECRET;
+    if (!secret) {
+      console.error("RAZORPAY_SECRET not configured");
+      return res.status(500).json({ message: "Payment verification configuration error" });
+    }
+
+    const text = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const generatedSignature = crypto
+      .createHmac("sha256", secret)
+      .update(text)
+      .digest("hex");
+
+    if (generatedSignature !== razorpay_signature) {
+      console.error("Signature verification failed", {
+        expected: generatedSignature,
+        received: razorpay_signature,
+      });
+      return res.status(400).json({ message: "Payment verification failed: invalid signature" });
+    }
+
+    // Verify order status with Razorpay API
+    let orderInfo;
+    try {
+      orderInfo = await razorpayInstance.orders.fetch(razorpay_order_id);
+    } catch (razorpayError) {
+      console.error("Razorpay API error:", razorpayError);
+      return res.status(400).json({ message: "Invalid order ID or Razorpay API error" });
+    }
+
+    if (orderInfo.status !== "paid") {
+      return res.status(400).json({ message: `Payment not completed. Order status: ${orderInfo.status}` });
+    }
+
+    // Validate ObjectIds
+    if (!mongoose.Types.ObjectId.isValid(userId) || !mongoose.Types.ObjectId.isValid(courseId)) {
+      return res.status(400).json({ message: "Invalid userId or courseId" });
+    }
+    const userObjId = new mongoose.Types.ObjectId(userId);
+    const courseObjId = new mongoose.Types.ObjectId(courseId);
+
+    // Verify user and course exist
+    const user = await User.findById(userObjId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const course = await Course.findById(courseObjId);
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    // Atomic enrollment: $addToSet prevents duplicates (e.g. retry / webhook duplicate)
+    await User.updateOne(
+      { _id: userObjId },
+      { $addToSet: { enrolledCourses: courseObjId } },
+    );
+    await Course.updateOne(
+      { _id: courseObjId },
+      { $addToSet: { enrolledStudents: userObjId } },
+    );
+
+    return res.status(200).json({
+      message: "Payment verified and enrollment successful",
+      enrolled: true,
+      courseId: courseObjId.toString(),
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+    });
+  } catch (error) {
+    console.error("Payment verification error:", error);
+    return res.status(500).json({
+      message: "Internal server error during payment verification",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};

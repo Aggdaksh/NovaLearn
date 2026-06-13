@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+
+# Logs and debug
+logs/
+*.log
+*.pid
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.cursor/
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Optional: Cursor/IDE project data (uncomment if you prefer not to track)
+# .cursor/
+
+# Misc
+*.local
+coverage/
+.vercel/
+.render/
+
+# Local scratch / exported design artifacts
+frontend/src/assets/LMS Flow Chat — Eraser*
+frontend/src/assets/*Copy.png
